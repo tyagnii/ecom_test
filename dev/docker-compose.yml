@@ -1,0 +1,95 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: ecom_postgres
+    environment:
+      POSTGRES_DB: ecom_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - ecom_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ecom_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Database Migration Service
+  migrate:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: ecom_migrate
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: ecom_test
+      DB_SSLMODE: disable
+    command: ["./main", "migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ecom_network
+    restart: "no"
+
+  # API Service
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: ecom_api
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: ecom_test
+      DB_SSLMODE: disable
+    command: ["./main", "api"]
+    ports:
+      - "8080:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    networks:
+      - ecom_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: Database Admin Interface
+  adminer:
+    image: adminer:latest
+    container_name: ecom_adminer
+    ports:
+      - "8081:8080"
+    depends_on:
+      - postgres
+    networks:
+      - ecom_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  ecom_network:
+    driver: bridge

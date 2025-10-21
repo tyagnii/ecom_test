@@ -6,16 +6,29 @@ import (
 
 	"github.com/tyagnii/ecom_test/db"
 	"github.com/tyagnii/ecom_test/dto"
+	"github.com/tyagnii/ecom_test/logger"
 )
 
 // Service provides business logic layer
 type Service struct {
-	repo *db.Repository
+	repo   *db.Repository
+	logger logger.Logger
 }
 
 // NewService creates a new service instance
 func NewService(repo *db.Repository) *Service {
-	return &Service{repo: repo}
+	return &Service{
+		repo:   repo,
+		logger: logger.NewDefaultLogger(),
+	}
+}
+
+// NewServiceWithLogger creates a new service instance with custom logger
+func NewServiceWithLogger(repo *db.Repository, logger logger.Logger) *Service {
+	return &Service{
+		repo:   repo,
+		logger: logger,
+	}
 }
 
 // Repo returns the repository (for internal use)
@@ -35,18 +48,27 @@ func NewBannerService(service *Service) *BannerService {
 
 // CreateBanner creates a new banner with validation
 func (s *BannerService) CreateBanner(name string) (*dto.Banner, error) {
+	s.logger.Info("Creating banner", 
+		logger.NewField("banner_name", name),
+		logger.NewField("operation", "create_banner"))
+	
 	// Validate input
 	if name == "" {
+		s.logger.Error("Banner creation failed: empty name")
 		return nil, fmt.Errorf("banner name cannot be empty")
 	}
 	
 	if len(name) > 255 {
+		s.logger.Error("Banner creation failed: name too long", 
+			logger.NewField("name_length", len(name)))
 		return nil, fmt.Errorf("banner name cannot exceed 255 characters")
 	}
 	
 	// Check if banner with same name already exists
 	existingBanner, err := s.repo.GetBannerByName(name)
 	if err == nil && existingBanner != nil {
+		s.logger.Warn("Banner creation failed: duplicate name", 
+			logger.NewField("existing_banner_id", existingBanner.ID))
 		return nil, fmt.Errorf("banner with name '%s' already exists", name)
 	}
 	
@@ -58,29 +80,61 @@ func (s *BannerService) CreateBanner(name string) (*dto.Banner, error) {
 	}
 	
 	if err := s.repo.CreateBanner(banner); err != nil {
+		s.logger.Error("Failed to create banner in database", 
+			logger.NewField("error", err.Error()))
 		return nil, fmt.Errorf("failed to create banner: %w", err)
 	}
+	
+	s.logger.Info("Banner created successfully", 
+		logger.NewField("banner_id", banner.ID),
+		logger.NewField("banner_name", banner.Name))
 	
 	return banner, nil
 }
 
 // GetBanner retrieves a banner by ID
 func (s *BannerService) GetBanner(id int) (*dto.Banner, error) {
+	s.logger.Debug("Retrieving banner", 
+		logger.NewField("banner_id", id),
+		logger.NewField("operation", "get_banner"))
+	
 	if id <= 0 {
+		s.logger.Error("Invalid banner ID", 
+			logger.NewField("banner_id", id))
 		return nil, fmt.Errorf("invalid banner ID: %d", id)
 	}
 	
 	banner, err := s.repo.GetBannerByID(id)
 	if err != nil {
+		s.logger.Error("Failed to retrieve banner", 
+			logger.NewField("banner_id", id),
+			logger.NewField("error", err.Error()))
 		return nil, err
 	}
+	
+	s.logger.Debug("Banner retrieved successfully", 
+		logger.NewField("banner_id", banner.ID),
+		logger.NewField("banner_name", banner.Name))
 	
 	return banner, nil
 }
 
 // GetAllBanners retrieves all banners
 func (s *BannerService) GetAllBanners() ([]*dto.Banner, error) {
-	return s.repo.GetAllBanners()
+	s.logger.Debug("Retrieving all banners", 
+		logger.NewField("operation", "get_all_banners"))
+	
+	banners, err := s.repo.GetAllBanners()
+	if err != nil {
+		s.logger.Error("Failed to retrieve all banners", 
+			logger.NewField("error", err.Error()))
+		return nil, err
+	}
+	
+	s.logger.Info("Retrieved all banners", 
+		logger.NewField("banner_count", len(banners)))
+	
+	return banners, nil
 }
 
 // UpdateBanner updates an existing banner
@@ -153,20 +207,32 @@ func NewClickService(service *Service) *ClickService {
 
 // RecordClick records a new click for a banner
 func (s *ClickService) RecordClick(bannerID int, timestamp time.Time) (*dto.Click, error) {
+	s.logger.Info("Recording click", 
+		logger.NewField("banner_id", bannerID),
+		logger.NewField("timestamp", timestamp),
+		logger.NewField("operation", "record_click"))
+	
 	// Validate input
 	if bannerID <= 0 {
+		s.logger.Error("Invalid banner ID for click", 
+			logger.NewField("banner_id", bannerID))
 		return nil, fmt.Errorf("invalid banner ID: %d", bannerID)
 	}
 	
 	// Check if banner exists
 	_, err := s.repo.GetBannerByID(bannerID)
 	if err != nil {
+		s.logger.Error("Banner not found for click", 
+			logger.NewField("banner_id", bannerID),
+			logger.NewField("error", err.Error()))
 		return nil, fmt.Errorf("banner with ID %d not found: %w", bannerID, err)
 	}
 	
 	// Use current time if timestamp is zero
 	if timestamp.IsZero() {
 		timestamp = time.Now()
+		s.logger.Debug("Using current timestamp for click", 
+			logger.NewField("timestamp", timestamp))
 	}
 	
 	// Create new click
@@ -177,8 +243,16 @@ func (s *ClickService) RecordClick(bannerID int, timestamp time.Time) (*dto.Clic
 	}
 	
 	if err := s.repo.CreateClick(click); err != nil {
+		s.logger.Error("Failed to record click in database", 
+			logger.NewField("banner_id", bannerID),
+			logger.NewField("error", err.Error()))
 		return nil, fmt.Errorf("failed to record click: %w", err)
 	}
+	
+	s.logger.Info("Click recorded successfully", 
+		logger.NewField("click_id", click.ID),
+		logger.NewField("banner_id", click.BannerID),
+		logger.NewField("timestamp", click.Timestamp))
 	
 	return click, nil
 }
@@ -237,17 +311,38 @@ func (s *ClickService) GetClicksForBannerInDateRange(bannerID int, start, end ti
 
 // GetClickStats retrieves click statistics for a banner
 func (s *ClickService) GetClickStats(bannerID int) (*db.ClickStats, error) {
+	s.logger.Debug("Retrieving click statistics", 
+		logger.NewField("banner_id", bannerID),
+		logger.NewField("operation", "get_click_stats"))
+	
 	if bannerID <= 0 {
+		s.logger.Error("Invalid banner ID for stats", 
+			logger.NewField("banner_id", bannerID))
 		return nil, fmt.Errorf("invalid banner ID: %d", bannerID)
 	}
 	
 	// Check if banner exists
 	_, err := s.repo.GetBannerByID(bannerID)
 	if err != nil {
+		s.logger.Error("Banner not found for stats", 
+			logger.NewField("banner_id", bannerID),
+			logger.NewField("error", err.Error()))
 		return nil, fmt.Errorf("banner with ID %d not found: %w", bannerID, err)
 	}
 	
-	return s.repo.GetClickStats(bannerID)
+	stats, err := s.repo.GetClickStats(bannerID)
+	if err != nil {
+		s.logger.Error("Failed to retrieve click stats", 
+			logger.NewField("banner_id", bannerID),
+			logger.NewField("error", err.Error()))
+		return nil, err
+	}
+	
+	s.logger.Debug("Click statistics retrieved", 
+		logger.NewField("banner_id", bannerID),
+		logger.NewField("total_clicks", stats.TotalClicks))
+	
+	return stats, nil
 }
 
 // DeleteClick deletes a click by ID
@@ -271,17 +366,29 @@ func NewAnalyticsService(service *Service) *AnalyticsService {
 
 // GetBannerPerformance retrieves performance metrics for all banners
 func (s *AnalyticsService) GetBannerPerformance() ([]*BannerPerformance, error) {
+	s.logger.Info("Retrieving banner performance metrics", 
+		logger.NewField("operation", "get_banner_performance"))
+	
 	// Get all banners
 	banners, err := s.repo.GetAllBanners()
 	if err != nil {
+		s.logger.Error("Failed to get banners for performance", 
+			logger.NewField("error", err.Error()))
 		return nil, fmt.Errorf("failed to get banners: %w", err)
 	}
+	
+	s.logger.Debug("Retrieved banners for performance analysis", 
+		logger.NewField("banner_count", len(banners)))
 	
 	var performances []*BannerPerformance
 	for _, banner := range banners {
 		stats, err := s.repo.GetClickStats(banner.ID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get stats for banner %d: %w", banner.ID, err)
+			s.logger.Warn("Failed to get stats for banner", 
+				logger.NewField("banner_id", banner.ID),
+				logger.NewField("error", err.Error()))
+			// Continue with other banners instead of failing completely
+			continue
 		}
 		
 		performance := &BannerPerformance{
@@ -293,6 +400,9 @@ func (s *AnalyticsService) GetBannerPerformance() ([]*BannerPerformance, error) 
 		
 		performances = append(performances, performance)
 	}
+	
+	s.logger.Info("Banner performance metrics retrieved", 
+		logger.NewField("performance_count", len(performances)))
 	
 	return performances, nil
 }

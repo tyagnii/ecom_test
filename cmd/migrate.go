@@ -1,6 +1,5 @@
 /*
 Copyright © 2025 NAME HERE <EMAIL ADDRESS>
-
 */
 package cmd
 
@@ -51,7 +50,7 @@ func init() {
 	migrateCmd.AddCommand(migrateStatusCmd)
 
 	// Database connection flags
-	migrateCmd.PersistentFlags().StringVar(&dbHost, "host", "localhost", "Database host")
+	migrateCmd.PersistentFlags().StringVar(&dbHost, "host", "postgres", "Database host")
 	migrateCmd.PersistentFlags().IntVar(&dbPort, "port", 5432, "Database port")
 	migrateCmd.PersistentFlags().StringVar(&dbUser, "user", "postgres", "Database user")
 	migrateCmd.PersistentFlags().StringVar(&dbPassword, "password", "", "Database password")
@@ -63,24 +62,29 @@ func getDatabaseURL() string {
 	if dbPassword == "" {
 		dbPassword = os.Getenv("DB_PASSWORD")
 	}
-	
+
 	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		dbHost, dbPort, dbUser, dbPassword, dbName, dbSSLMode)
+		dbHost,
+		dbPort,
+		dbUser,
+		dbPassword,
+		dbName,
+		dbSSLMode)
 }
 
 func connectToDatabase() (*sql.DB, error) {
 	dbURL := getDatabaseURL()
-	
+
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database connection: %w", err)
 	}
-	
+
 	// Test the connection
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
-	
+
 	return db, nil
 }
 
@@ -91,18 +95,18 @@ func runMigrations() {
 		log.Fatalf("Database connection failed: %v", err)
 	}
 	defer db.Close()
-	
+
 	// Get migrations directory
 	migrationsDir := filepath.Join("db", "migrations")
-	
+
 	// Create migrator and run migrations
 	migrator := migrations.NewMigrator(db)
-	
+
 	log.Println("Starting database migrations...")
 	if err := migrator.RunMigrations(migrationsDir); err != nil {
 		log.Fatalf("Migration failed: %v", err)
 	}
-	
+
 	log.Println("Migrations completed successfully!")
 }
 
@@ -113,13 +117,13 @@ func showMigrationStatus() {
 		log.Fatalf("Database connection failed: %v", err)
 	}
 	defer db.Close()
-	
+
 	// Get migrations directory
 	migrationsDir := filepath.Join("db", "migrations")
-	
+
 	// Create migrator and show status
 	migrator := migrations.NewMigrator(db)
-	
+
 	if err := migrator.GetMigrationStatus(migrationsDir); err != nil {
 		log.Fatalf("Failed to get migration status: %v", err)
 	}

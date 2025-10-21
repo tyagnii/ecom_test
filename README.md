@@ -1,2 +1,9 @@
-# ecom_test
-ecom test task
+# Click Counter
+Service implements banner click counter
+
+## Docker
+
+
+## Run
+
+

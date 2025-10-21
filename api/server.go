@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/tyagnii/ecom_test/app"
+	"github.com/tyagnii/ecom_test/cache"
 	"github.com/tyagnii/ecom_test/db"
 )
 
@@ -23,8 +24,12 @@ func NewServer(database *sql.DB) *Server {
 	repo := db.NewRepository(database)
 	service := app.NewService(repo)
 	
-	// Create API handler
-	handler := NewAPIHandler(service)
+	// Create cache and cached repository
+	cacheInstance := cache.NewInMemoryCache(cache.DefaultCleanupInterval)
+	cachedRepo := cache.NewCachedRepository(repo, cacheInstance)
+	
+	// Create API handler with cached repository
+	handler := NewAPIHandler(service, cachedRepo)
 	
 	return &Server{
 		handler: handler,

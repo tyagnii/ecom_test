@@ -9,17 +9,22 @@ import (
 	"time"
 
 	"github.com/tyagnii/ecom_test/app"
+	"github.com/tyagnii/ecom_test/cache"
 	"github.com/tyagnii/ecom_test/db"
 )
 
 // APIHandler provides HTTP API handlers
 type APIHandler struct {
-	service *app.Service
+	service     *app.Service
+	cachedRepo  *cache.CachedRepository
 }
 
 // NewAPIHandler creates a new API handler
-func NewAPIHandler(service *app.Service) *APIHandler {
-	return &APIHandler{service: service}
+func NewAPIHandler(service *app.Service, cachedRepo *cache.CachedRepository) *APIHandler {
+	return &APIHandler{
+		service:    service,
+		cachedRepo: cachedRepo,
+	}
 }
 
 // CounterRequest represents a counter request
@@ -92,8 +97,8 @@ func (h *APIHandler) CounterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get updated click count for this banner
-	stats, err := clickService.GetClickStats(bannerID)
+	// Get updated click count for this banner using cached repository
+	stats, err := h.cachedRepo.GetClickStats(bannerID)
 	if err != nil {
 		log.Printf("Failed to get click stats for banner %d: %v", bannerID, err)
 		// Don't fail the request, just use the click we recorded
@@ -166,15 +171,15 @@ func (h *APIHandler) StatsHandler(w http.ResponseWriter, r *http.Request) {
 	// Get click service
 	clickService := app.NewClickService(h.service)
 
-	// Get overall stats for the banner
-	overallStats, err := clickService.GetClickStats(bannerID)
+	// Get overall stats for the banner using cached repository
+	overallStats, err := h.cachedRepo.GetClickStats(bannerID)
 	if err != nil {
 		log.Printf("Failed to get overall stats for banner %d: %v", bannerID, err)
 		h.sendError(w, http.StatusInternalServerError, "Failed to get stats", "Internal server error")
 		return
 	}
 
-	// Get clicks in the specified time period
+	// Get clicks in the specified time period (not cached due to time range specificity)
 	clicksInPeriod, err := clickService.GetClicksForBannerInDateRange(bannerID, req.TsFrom, req.TsTo)
 	if err != nil {
 		log.Printf("Failed to get clicks in period for banner %d: %v", bannerID, err)
@@ -240,6 +245,10 @@ func (h *APIHandler) SetupRoutes() *http.ServeMux {
 	mux.HandleFunc("/api/v1/counter/", h.CounterHandler)
 	mux.HandleFunc("/api/v1/stats/", h.StatsHandler)
 	mux.HandleFunc("/health", h.HealthHandler)
+
+	// Cache management routes
+	cacheHandler := NewCacheManagementHandler(h.cachedRepo)
+	cacheHandler.SetupCacheRoutes(mux)
 
 	// Add middleware for logging
 	return h.addLoggingMiddleware(mux)
